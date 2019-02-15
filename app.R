@@ -42,6 +42,7 @@ guidestar_twograms <- guidestar_words %>%
     unnest_tokens(twogram, Mission, token = "ngrams", n = 2)
 
 load("data/word2phrase_model.RData")
+# load("data/fasttext_word2vec_model.RData")
 
 ui <- fluidPage(theme = shinytheme("cerulean"),
                 
@@ -110,6 +111,8 @@ server <- function(input, output) {
     
     vec1 <- reactive({ word2phrase_model[[query_words()$word, average = FALSE]] })
     vec2 <- reactive({ word2phrase_model[[guidestar_words$word, average = FALSE]] })
+    # vec1 <- reactive({ get_word_vectors(fasttext_word2vec_model, unique(query_words()$word)) })
+    # vec2 <- reactive({ get_word_vectors(fasttext_word2vec_model, unique(guidestar_words$word)) })
     
     cosine_sim <- reactive({
         similarities <- cosineSimilarity(vec1(), vec2())

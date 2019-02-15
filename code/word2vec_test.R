@@ -84,8 +84,13 @@ guidestar_words <- guidestar_words %>%
 
 vec1 <- word2phrase_model[[query_words$word, average = FALSE]]
 vec2 <- word2phrase_model[[guidestar_words$word, average = FALSE]]
-
+#vec1 <- word2vec_model[[query_words$word, average = FALSE]]
+#vec2 <- word2vec_model[[guidestar_words$word, average = FALSE]]
 similarities <- cosineSimilarity(vec1, vec2)
+
+#similarities <-  cosineSimilarity(get_word_vectors(fasttext_word2vec_model, unique(query_words$word)),
+#                                  get_word_vectors(fasttext_word2vec_model, unique(guidestar_words$word)))
+
 highest_matching_words <- colSums(similarities)
 matching_df <- data.frame(word = names(highest_matching_words), sim = as.numeric(highest_matching_words), stringsAsFactors = FALSE)
 
