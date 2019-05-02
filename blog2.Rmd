@@ -1,0 +1,177 @@
+---
+title: "Using NLP to find the perfect donor match - 2"
+output: 
+    html_document:
+        self_contained: no
+
+---
+
+```{r setup, echo=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+In our previous post, we noted how 1 and 2 grams from a query mission can be matched to donor mission statements to find an appropriate donor organization. We performed some text cleaning and used tf-idf as a metric for weighting the more important words. What if, instead of computing simple word matching statistics, we could encode a lot more information about the word - rather than a few numerical values that we compute, we store each word as some n-dimensional vector, encoding various properties of its meaning, usage, and syntax?
+
+Word embeddings are a way of representing a word along with the meaning/context it is found in. In this representation a word becomes a vector - or a series of numbers - that signify the word meaning. Now if one word vector 'matches' another word vector we can say that the two words match in meaning and context.
+
+In this phase we will use prediction based word embeddings using word2vec, and in order to find 'matches' between word vectors we use a measure called cosine similarity. Let's see how this works through our Donor Matching service.
+
+
+```{r, results = 'hide'}
+library(tidyverse)
+library(tidytext)
+library(wordVectors)
+library(SnowballC)
+
+guidestar <- read_csv("data/guidestar_full.csv")
+
+# tokenizing and removing stopwords
+guidestar_words <- guidestar %>%
+    mutate(Mission = paste(Organization, Mission)) %>%
+    unnest_tokens(word, Mission, drop = FALSE) %>%
+    anti_join(stop_words) %>%
+    mutate(word = wordStem(word, language = "english"))
+
+guidestar_clean <- guidestar_words %>%
+    select(EIN, Organization, word) %>%
+    group_by(Organization) %>%
+    summarise(Mission = paste(unique(word), collapse = " ")) 
+
+
+full_text <- tolower(paste(guidestar_clean$Mission, collapse = "\n"))
+
+writeLines(full_text, "training_temp.txt")
+
+tmp_file_txt <- "training_temp.txt"
+prep_word2vec("training_temp.txt", destination = "training_complete.txt", 
+              lowercase = TRUE, bundle_ngrams = 2)
+word2vec_model1 <- read.binary.vectors("word2vec_vectors1.bin", nrows = Inf, cols = "All",
+                                       rowname_list = NULL, rowname_regexp = NULL)
+# params used
+#train_word2vec("training_complete.txt", "word2vec_vectors1.bin", 
+#                                 vectors = 200, min_count = 2, threads = 4,
+#                                 window = 12, iter = 5,
+#                                 negative_samples = 0,
+#                                 force = TRUE)
+
+close_words <- closest_to(word2vec_model1,
+                        word2vec_model1[[c("cardiovascular")]],
+                        n = 10)
+close_words_vec <- word2vec_model1[[close_words$word, average=F]]
+plot(close_words_vec, method="pca")
+
+```
+```{r}
+close_words
+```
+
+Seems like it get's some words right but not having enough missions it's not perfect. Word2Vec would work better when we have a lot of text data relevant to the domain. So for now we can try to reduce the precision by lowering the size represented by the vectors parameter (implying there are only as many dimensions the word appears in?).
+
+```{r, results='hide'}
+
+word2vec_model2 <- read.binary.vectors("word2vec_vectors2.bin", nrows = Inf, cols = "All",
+                                       rowname_list = NULL, rowname_regexp = NULL)
+```
+
+Training code with params
+
+```{r, eval=FALSE}
+train_word2vec("training_complete.txt", "word2vec_vectors2.bin", 
+                                 vectors = 30, threads = 4,
+                                 window = 7, min_count = 2, 
+                                 negative_samples = 4, iter = 10,
+                                 force = TRUE)
+```
+```{r}
+close_words <- closest_to(word2vec_model2,
+                        word2vec_model2[[c("diabet")]],
+                        n = 10)
+close_words_vec <- word2vec_model2[[close_words$word, average=F]]
+plot(close_words_vec, method="pca")
+close_words
+```
+
+Let us also try to reduce the window size and see how that affects. A smaller window would tend to give us more related words, in theory.
+
+```{r, results='hide'}
+
+word2vec_model3 <- read.binary.vectors("word2vec_vectors3.bin", nrows = Inf, cols = "All",
+                                       rowname_list = NULL, rowname_regexp = NULL)
+```
+Training code 
+```{r, eval=FALSE}
+    
+    train_word2vec("training_complete.txt", "word2vec_vectors3.bin", 
+                                 vectors = 20, threads = 4,
+                                 window = 5, iter = 10,
+                                 negative_samples = 0,
+                                 force = TRUE)
+```
+```{r}
+close_words <- closest_to(word2vec_model3,
+                        word2vec_model3[[c("diabet")]],
+                        n = 10)
+close_words_vec <- word2vec_model3[[close_words$word, average=F]]
+plot(close_words_vec, method="pca")
+close_words
+```
+
+Let's go with model 2 and build the word representation for words in the query mission.
+
+```{r, results = 'hide'}
+query <- "We aim to promote awareness of serious heart conditions and work to provide treatment for those with heart disease, high blood pressure, diabetes, and other cardiovascular-related diseases who are unable to afford it"
+
+query_words <- query %>%
+    as.data.frame %>%
+    select(Query = 1) %>%
+    mutate(Query = tolower(as.character(Query))) %>%
+    unnest_tokens(word, Query) %>%
+    anti_join(stop_words) %>%
+    mutate(word = wordStem(word, language = "english")) 
+
+mat1 <- word2vec_model2[[unique(query_words$word), average = FALSE]] 
+mat2 <- word2vec_model2[[guidestar_words$word, average = FALSE]]
+
+similarities <- cosineSimilarity(mat1, mat2)
+
+#highest_matching_words <- apply(similarities, 2, max)
+highest_matching_words <- colSums(similarities)
+
+matching_df <- data.frame(word = names(highest_matching_words), sim = as.numeric(highest_matching_words), stringsAsFactors = FALSE)
+```
+
+```{r}       
+res <- guidestar_words %>%
+    select(EIN, Mission, word) %>%
+    left_join(matching_df) %>%
+    group_by(EIN, word) %>%
+    group_by(EIN) %>%
+    summarise(Mission = Mission[!is.na(Mission)][1],
+              Score = mean(sim, na.rm = TRUE)) %>%
+    arrange(desc(Score)) 
+
+res %>%
+    slice(1:5) %>%
+    knitr::kable()
+```
+
+Our top matching mission illustrates a fundamental issue with a word2vec model - because vectors are assigned at the word level, we match on the word "Heart" despite the meaning being very different from our target query! By comparison, the second mission is a great match. In our third and final installment of these, we will use **contextual** word-embeddings, which allow us to directly encode a phrase or full mission statement as a single n-dimensional vector, taking into account the context of the words within them.
+
+```{r, echo=FALSE, results='hide'}
+library(httr)
+library(jsonlite)
+
+bert_raw <- POST("http://104.198.98.159:5000/encode", body = list(text = query), encode = "json")
+bert_result <- fromJSON(content(bert_raw, "text"))
+
+missions_raw <- POST("http://104.198.98.159:5000/encode", body = list(text = res$Mission[1:50]), encode = "json")
+missions_result <- fromJSON(content(missions_raw, "text"))
+
+res2 <- cosineSimilarity(bert_result, missions_result)
+tibble(
+    Mission = res$Mission[1:50],
+    BERTScore = res2[1,]
+) %>%
+    arrange(desc(BERTScore))
+```
+
