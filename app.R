@@ -1,9 +1,9 @@
 library(shiny)
 library(shinythemes)
 library(tidyverse)
-library(stringdist)
 library(tidytext)
 library(wordVectors)
+library(DT)
 
 ## Set images resource path
 addResourcePath("images", "images")
@@ -72,9 +72,9 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
                          uiOutput("result")
                 ),
                 tabPanel("Raw",
-                         DT::dataTableOutput("top5_missions"),
+                         DTOutput("top5_missions"),
                          hr(),
-                         DT::dataTableOutput("top5")
+                         DTOutput("top5")
                 )
             )
         )
@@ -185,7 +185,7 @@ server <- function(input, output) {
                            "<br><br>Their guidestar profile is: <a target='_blank', href='", guidestar$Guidestar[guidestar$Organization == myrnk$Organization], "'>", guidestar$Guidestar[guidestar$Organization == myrnk$Organization], "</a>")))
     })
     
-    output$top5 <- DT::renderDataTable({
+    output$top5 <- renderDT({
         if (is.null(values$query)) return(NULL)
         if (nrow(full_ranks()) == 0) return(NULL)
         
@@ -194,7 +194,7 @@ server <- function(input, output) {
 	    select(-Mission)
     })
     
-    output$top5_missions <- DT::renderDataTable({
+    output$top5_missions <- renderDT({
         if (is.null(values$query)) return(NULL)
         if (nrow(full_ranks()) == 0) return(NULL)
         
