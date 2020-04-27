@@ -72,9 +72,9 @@ ui <- fluidPage(theme = shinytheme("cerulean"),
                          uiOutput("result")
                 ),
                 tabPanel("Raw",
-                         dataTableOutput("top5_missions"),
+                         DT::dataTableOutput("top5_missions"),
                          hr(),
-                         dataTableOutput("top5")
+                         DT::dataTableOutput("top5")
                 )
             )
         )
@@ -185,7 +185,7 @@ server <- function(input, output) {
                            "<br><br>Their guidestar profile is: <a target='_blank', href='", guidestar$Guidestar[guidestar$Organization == myrnk$Organization], "'>", guidestar$Guidestar[guidestar$Organization == myrnk$Organization], "</a>")))
     })
     
-    output$top5 <- renderDataTable({
+    output$top5 <- DT::renderDataTable({
         if (is.null(values$query)) return(NULL)
         if (nrow(full_ranks()) == 0) return(NULL)
         
@@ -194,7 +194,7 @@ server <- function(input, output) {
 	    select(-Mission)
     })
     
-    output$top5_missions <- renderDataTable({
+    output$top5_missions <- DT::renderDataTable({
         if (is.null(values$query)) return(NULL)
         if (nrow(full_ranks()) == 0) return(NULL)
         
